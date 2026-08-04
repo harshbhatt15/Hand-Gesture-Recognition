@@ -157,3 +157,4 @@ plt.legend()
 
 plt.savefig("models/loss_history.png")
 plt.show()
+print(class_names)
