@@ -1,286 +1,338 @@
 import cv2
+import json
 import numpy as np
 import tensorflow as tf
-from pathlib import Path
+import mediapipe as mp
 
-# ==========================
+from pathlib import Path
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+
+# ============================================================
 # Project Paths
-# ==========================
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 MODEL_PATH = BASE_DIR / "models" / "best_model.keras"
+CLASS_NAMES_PATH = BASE_DIR / "models" / "class_names.json"
+HAND_MODEL_PATH = BASE_DIR / "models" / "hand_landmarker.task"
 
-# ==========================
-# Load Model
-# ==========================
 
-model = tf.keras.models.load_model(MODEL_PATH)
+# ============================================================
+# Check Required Files
+# ============================================================
 
-# ==========================
-# Class Names
-# ==========================
+if not MODEL_PATH.exists():
+    raise FileNotFoundError(
+        f"Model not found: {MODEL_PATH}"
+    )
 
-class_names = [
-    '0',
-    '1',
-    '10',
-    '11',
-    '12',
-    '13',
-    '14',
-    '15',
-    '16',
-    '17',
-    '18',
-    '19',
-    '2',
-    '3',
-    '4',
-    '5',
-    '6',
-    '7',
-    '8',
-    '9'
-]
+if not CLASS_NAMES_PATH.exists():
+    raise FileNotFoundError(
+        f"Class names not found: {CLASS_NAMES_PATH}"
+    )
 
-# ==========================
-# Webcam
-# ==========================
+if not HAND_MODEL_PATH.exists():
+    raise FileNotFoundError(
+        f"Hand landmarker model not found: {HAND_MODEL_PATH}"
+    )
+
+
+# ============================================================
+# Load MobileNetV2 Model
+# ============================================================
+
+print("Loading gesture recognition model...")
+
+model = tf.keras.models.load_model(
+    MODEL_PATH
+)
+
+
+# ============================================================
+# Load Class Names
+# ============================================================
+
+with open(CLASS_NAMES_PATH, "r") as f:
+    class_names = json.load(f)
+
+print("Number of classes:", len(class_names))
+print("Classes:", class_names)
+
+
+# ============================================================
+# MediaPipe Hand Landmarker
+# ============================================================
+
+base_options = python.BaseOptions(
+    model_asset_path=str(HAND_MODEL_PATH)
+)
+
+options = vision.HandLandmarkerOptions(
+    base_options=base_options,
+    running_mode=vision.RunningMode.IMAGE,
+    num_hands=1,
+    min_hand_detection_confidence=0.5,
+    min_hand_presence_confidence=0.5,
+    min_tracking_confidence=0.5
+)
+
+detector = vision.HandLandmarker.create_from_options(
+    options
+)
+
+
+# ============================================================
+# Open Webcam
+# ============================================================
 
 cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
-    print("Error: Could not open webcam.")
-    exit()
+    raise RuntimeError(
+        "Could not open webcam."
+    )
 
-print("Webcam started.")
-print("Place your hand inside the box.")
-print("Press 'q' to quit.")
+print()
+print("========================================")
+print("ASL HAND GESTURE RECOGNITION")
+print("========================================")
+print("Show your hand to the camera.")
+print("Press Q to quit.")
+print("========================================")
+
+
+# ============================================================
+# Webcam Loop
+# ============================================================
 
 while True:
 
     ret, frame = cap.read()
 
     if not ret:
+        print("Could not read webcam frame.")
         break
 
-    # Mirror effect
+    # Mirror webcam
     frame = cv2.flip(frame, 1)
 
     height, width, _ = frame.shape
 
-    # ==========================
-    # Region of Interest
-    # ==========================
+    # --------------------------------------------------------
+    # Convert OpenCV BGR → RGB
+    # --------------------------------------------------------
 
-    x1 = int(width * 0.05)
-    y1 = int(height * 0.15)
-
-    x2 = int(width * 0.45)
-    y2 = int(height * 0.85)
-
-    roi = frame[y1:y2, x1:x2]
-
-    # ==========================
-    # Convert to HSV
-    # ==========================
-
-    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-
-    # Skin color range
-    lower_skin = np.array([0, 20, 50], dtype=np.uint8)
-    upper_skin = np.array([30, 255, 255], dtype=np.uint8)
-
-    mask = cv2.inRange(
-        hsv,
-        lower_skin,
-        upper_skin
+    rgb_frame = cv2.cvtColor(
+        frame,
+        cv2.COLOR_BGR2RGB
     )
 
-    # ==========================
-    # Clean Mask
-    # ==========================
-
-    kernel = np.ones((5, 5), np.uint8)
-
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_OPEN,
-        kernel
+    # Convert to MediaPipe Image
+    mp_image = mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=rgb_frame
     )
 
-    mask = cv2.morphologyEx(
-        mask,
-        cv2.MORPH_CLOSE,
-        kernel
-    )
+    # --------------------------------------------------------
+    # Detect Hand
+    # --------------------------------------------------------
 
-    mask = cv2.GaussianBlur(
-        mask,
-        (5, 5),
-        0
-    )
+    result = detector.detect(mp_image)
 
-    # ==========================
-    # Find Hand Contour
-    # ==========================
+    # --------------------------------------------------------
+    # If Hand Detected
+    # --------------------------------------------------------
 
-    contours, _ = cv2.findContours(
-        mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
-    )
+    if result.hand_landmarks:
 
-    hand_mask = np.zeros_like(mask)
+        landmarks = result.hand_landmarks[0]
 
-    if contours:
+        # Get bounding box
+        x_coordinates = [
+            int(landmark.x * width)
+            for landmark in landmarks
+        ]
 
-        # Largest contour
-        contour = max(
-            contours,
-            key=cv2.contourArea
+        y_coordinates = [
+            int(landmark.y * height)
+            for landmark in landmarks
+        ]
+
+        x_min = min(x_coordinates)
+        x_max = max(x_coordinates)
+
+        y_min = min(y_coordinates)
+        y_max = max(y_coordinates)
+
+        # Add padding
+        padding = 40
+
+        x_min = max(0, x_min - padding)
+        y_min = max(0, y_min - padding)
+
+        x_max = min(width, x_max + padding)
+        y_max = min(height, y_max + padding)
+
+        # Draw bounding box
+        cv2.rectangle(
+            frame,
+            (x_min, y_min),
+            (x_max, y_max),
+            (0, 255, 0),
+            2
         )
 
-        area = cv2.contourArea(contour)
+        # ----------------------------------------------------
+        # Crop Hand
+        # ----------------------------------------------------
 
-        if area > 3000:
+        hand = frame[
+            y_min:y_max,
+            x_min:x_max
+        ]
 
-            cv2.drawContours(
-                hand_mask,
-                [contour],
-                -1,
-                255,
-                thickness=cv2.FILLED
+        if hand.size > 0:
+
+            # BGR → RGB
+            hand_rgb = cv2.cvtColor(
+                hand,
+                cv2.COLOR_BGR2RGB
             )
 
-            # ==========================
-            # Crop Hand
-            # ==========================
+            # Resize
+            hand_rgb = cv2.resize(
+                hand_rgb,
+                (224, 224)
+            )
 
-            hx, hy, hw, hh = cv2.boundingRect(contour)
+            # Float32
+            hand_rgb = hand_rgb.astype(
+                np.float32
+            )
 
-            hand = hand_mask[
-                hy:hy + hh,
-                hx:hx + hw
+            # Normalize
+            hand_rgb = hand_rgb / 255.0
+
+            # Add batch dimension
+            input_image = np.expand_dims(
+                hand_rgb,
+                axis=0
+            )
+
+            # ------------------------------------------------
+            # Prediction
+            # ------------------------------------------------
+
+            prediction = model.predict(
+                input_image,
+                verbose=0
+            )
+
+            predicted_index = int(
+                np.argmax(prediction[0])
+            )
+
+            predicted_class = class_names[
+                predicted_index
             ]
 
-            if hand.size > 0:
+            confidence = float(
+                np.max(prediction[0]) * 100
+            )
 
-                # Resize to model input
-                hand = cv2.resize(
-                    hand,
-                    (224, 224)
+            # ------------------------------------------------
+            # Display Prediction
+            # ------------------------------------------------
+
+            cv2.putText(
+                frame,
+                f"Gesture: {predicted_class}",
+                (20, 45),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.2,
+                (0, 255, 0),
+                3
+            )
+
+            cv2.putText(
+                frame,
+                f"Confidence: {confidence:.2f}%",
+                (20, 85),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 255, 0),
+                2
+            )
+
+            # ------------------------------------------------
+            # Show Processed Hand
+            # ------------------------------------------------
+
+            cv2.imshow(
+                "Processed Hand",
+                cv2.cvtColor(
+                    hand_rgb,
+                    cv2.COLOR_RGB2BGR
                 )
+            )
 
-                # Convert grayscale → RGB
-                hand = cv2.cvtColor(
-                    hand,
-                    cv2.COLOR_GRAY2RGB
-                )
+        # ----------------------------------------------------
+        # Draw Hand Landmarks
+        # ----------------------------------------------------
 
-                # Float32
-                hand = hand.astype(
-                    np.float32
-                )
+        for landmark in landmarks:
 
-                # Normalize
-                hand = hand / 255.0
+            x = int(landmark.x * width)
+            y = int(landmark.y * height)
 
-                # Batch dimension
-                hand = np.expand_dims(
-                    hand,
-                    axis=0
-                )
+            cv2.circle(
+                frame,
+                (x, y),
+                3,
+                (255, 0, 0),
+                -1
+            )
 
-                # ==========================
-                # Prediction
-                # ==========================
+    else:
 
-                prediction = model.predict(
-                    hand,
-                    verbose=0
-                )
+        cv2.putText(
+            frame,
+            "No hand detected",
+            (20, 45),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 0, 255),
+            2
+        )
 
-                predicted_index = np.argmax(
-                    prediction
-                )
-
-                predicted_class = class_names[
-                    predicted_index
-                ]
-
-                confidence = (
-                    np.max(prediction) * 100
-                )
-
-                # ==========================
-                # Display Prediction
-                # ==========================
-
-                cv2.putText(
-                    frame,
-                    f"Gesture: {predicted_class}",
-                    (20, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 255, 0),
-                    2
-                )
-
-                cv2.putText(
-                    frame,
-                    f"Confidence: {confidence:.2f}%",
-                    (20, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 255, 0),
-                    2
-                )
-
-                # Show processed hand
-                cv2.imshow(
-                    "Processed Hand",
-                    hand[0]
-                )
-
-    # ==========================
-    # Draw ROI
-    # ==========================
-
-    cv2.rectangle(
-        frame,
-        (x1, y1),
-        (x2, y2),
-        (255, 255, 255),
-        2
-    )
-
-    cv2.putText(
-        frame,
-        "Place hand here",
-        (x1, y1 - 10),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
-        (255, 255, 255),
-        2
-    )
-
-    # ==========================
-    # Display Webcam
-    # ==========================
+    # ========================================================
+    # Show Webcam
+    # ========================================================
 
     cv2.imshow(
-        "Hand Gesture Number Recognition",
+        "ASL Hand Gesture Recognition",
         frame
     )
 
+    # ========================================================
     # Quit
+    # ========================================================
+
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
-# ==========================
+
+# ============================================================
 # Cleanup
-# ==========================
+# ============================================================
 
 cap.release()
+
+detector.close()
+
 cv2.destroyAllWindows()
+
+print("\nWebcam stopped.")
