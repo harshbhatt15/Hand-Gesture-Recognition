@@ -1,0 +1,17 @@
+# Datasets
+dataset/
+Dataset/
+
+# Python
+__pycache__/
+*.pyc
+
+# TensorFlow / model files
+*.h5
+*.keras
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
