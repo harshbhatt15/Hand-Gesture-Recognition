@@ -9,7 +9,7 @@ from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 
 # ============================================================
 # Paths
-# ============================================================
+
 
 TRAIN_DIR = r"D:\Hand gesture\Dataset\ASL-HG American Sign Language Hand Gesture Image D\ASL_HG_36000\Processed_images\asl_processed\train"
 
@@ -24,7 +24,7 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 # ============================================================
 # Parameters
-# ============================================================
+
 
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
@@ -34,7 +34,7 @@ SEED = 42
 
 # ============================================================
 # Load Training Dataset
-# ============================================================
+
 
 train_ds = tf.keras.utils.image_dataset_from_directory(
     TRAIN_DIR,
@@ -49,7 +49,6 @@ train_ds = tf.keras.utils.image_dataset_from_directory(
 
 # ============================================================
 # Load Validation Dataset
-# ============================================================
 
 val_ds = tf.keras.utils.image_dataset_from_directory(
     TRAIN_DIR,
@@ -64,7 +63,7 @@ val_ds = tf.keras.utils.image_dataset_from_directory(
 
 # ============================================================
 # Get Class Names BEFORE map()
-# ============================================================
+
 
 class_names = train_ds.class_names
 
@@ -85,7 +84,7 @@ if len(class_names) != 36:
 
 # ============================================================
 # Normalize Images
-# ============================================================
+
 
 normalization_layer = layers.Rescaling(1.0 / 255)
 
@@ -102,7 +101,7 @@ val_ds = val_ds.map(
 
 # ============================================================
 # Improve Dataset Performance
-# ============================================================
+
 
 train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
 val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
@@ -110,7 +109,7 @@ val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
 
 # ============================================================
 # Load MobileNetV2
-# ============================================================
+
 
 base_model = MobileNetV2(
     weights="imagenet",
@@ -125,7 +124,7 @@ base_model.trainable = False
 
 # ============================================================
 # Build Model
-# ============================================================
+
 
 model = models.Sequential([
     
@@ -151,7 +150,7 @@ model = models.Sequential([
 
 # ============================================================
 # Compile Model
-# ============================================================
+
 
 model.compile(
     optimizer=tf.keras.optimizers.Adam(
@@ -166,14 +165,14 @@ model.compile(
 
 # ============================================================
 # Display Model
-# ============================================================
+
 
 model.summary()
 
 
 # ============================================================
 # Model Checkpoint
-# ============================================================
+
 
 checkpoint_path = os.path.join(
     MODEL_DIR,
@@ -191,7 +190,7 @@ checkpoint = ModelCheckpoint(
 
 # ============================================================
 # Early Stopping
-# ============================================================
+
 
 early_stopping = EarlyStopping(
     monitor="val_accuracy",
@@ -203,7 +202,7 @@ early_stopping = EarlyStopping(
 
 # ============================================================
 # Train Model
-# ============================================================
+
 
 print("\n========================================")
 print("STARTING TRAINING")
@@ -222,7 +221,7 @@ history = model.fit(
 
 # ============================================================
 # Save Class Names
-# ============================================================
+
 
 class_names_path = os.path.join(
     MODEL_DIR,
@@ -235,7 +234,7 @@ with open(class_names_path, "w") as f:
 
 # ============================================================
 # Load Best Model
-# ============================================================
+
 
 best_model = tf.keras.models.load_model(
     checkpoint_path
@@ -244,7 +243,7 @@ best_model = tf.keras.models.load_model(
 
 # ============================================================
 # Load Test Dataset
-# ============================================================
+
 
 test_ds = tf.keras.utils.image_dataset_from_directory(
     TEST_DIR,
@@ -264,7 +263,7 @@ print("Test classes:", test_class_names)
 
 # ============================================================
 # Normalize Test Dataset
-# ============================================================
+
 
 test_ds = test_ds.map(
     lambda x, y: (normalization_layer(x), y),
@@ -278,7 +277,6 @@ test_ds = test_ds.prefetch(
 
 # ============================================================
 # Evaluate Model
-# ============================================================
 
 print("\n========================================")
 print("TESTING MODEL")
