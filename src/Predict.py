@@ -1,62 +1,27 @@
+import os
 import json
 import numpy as np
 import tensorflow as tf
-from pathlib import Path
+
+from tensorflow.keras.preprocessing import image
 
 
 # ============================================================
-# Project Paths
+# PATHS
+# ============================================================
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_PATH = r"D:\Hand gesture\models\best_model.keras"
 
-MODEL_PATH = BASE_DIR / "models" / "best_model.keras"
-CLASS_NAMES_PATH = BASE_DIR / "models" / "class_names.json"
+CLASS_NAMES_PATH = r"D:\Hand gesture\models\class_names.json"
+
+IMAGE_PATH = r"D:\Hand gesture\Dataset\American Sign Language Digits Dataset\0\Input Images - Sign 0\Sign 0 (1).jpeg"
 
 
 # ============================================================
-# Image to Predict
-
-# Change this path when testing another image
-IMAGE_PATH = (
-    BASE_DIR
-    / "Dataset"
-    / "ASL-HG American Sign Language Hand Gesture Image D"
-    / "ASL_HG_36000"
-    / "Processed_images"
-    / "asl_processed"
-    / "test"
-    / "0"
-    / "P1_0_1.jpg"
-)
-
-
+# LOAD MODEL
 # ============================================================
-# Check Files
 
-
-if not MODEL_PATH.exists():
-    raise FileNotFoundError(
-        f"Model not found:\n{MODEL_PATH}\n\n"
-        "Run train.py first."
-    )
-
-if not CLASS_NAMES_PATH.exists():
-    raise FileNotFoundError(
-        f"Class names file not found:\n{CLASS_NAMES_PATH}\n\n"
-        "Run train.py first."
-    )
-
-if not IMAGE_PATH.exists():
-    raise FileNotFoundError(
-        f"Image not found:\n{IMAGE_PATH}\n\n"
-        "Change IMAGE_PATH to a valid image."
-    )
-
-
-# ============================================================
-# Load Model
-
-print("Loading model...")
+print("\nLoading EfficientNetB0 model...")
 
 model = tf.keras.models.load_model(
     MODEL_PATH
@@ -64,90 +29,118 @@ model = tf.keras.models.load_model(
 
 
 # ============================================================
-# Load Class Names
-
-with open(CLASS_NAMES_PATH, "r") as f:
-    class_names = json.load(f)
-
-print("Number of classes:", len(class_names))
-print("Classes:", class_names)
-
-
+# LOAD CLASSES
 # ============================================================
-# Load Image
 
-image_bytes = tf.io.read_file(
-    str(IMAGE_PATH)
+with open(
+    CLASS_NAMES_PATH,
+    "r"
+) as file:
+
+    class_names = json.load(file)
+
+
+print(
+    "Number of classes:",
+    len(class_names)
 )
 
-img = tf.io.decode_image(
-    image_bytes,
-    channels=3,
-    expand_animations=False
-)
-
-
-# ============================================================
-# Resize
-
-
-img = tf.image.resize(
-    img,
-    [224, 224]
+print(
+    "Classes:",
+    class_names
 )
 
 
 # ============================================================
-# Normalize
+# LOAD IMAGE
+# ============================================================
 
-img = tf.cast(
-    img,
-    tf.float32
+img = image.load_img(
+    IMAGE_PATH,
+    target_size=(
+        224,
+        224
+    )
 )
 
-img = img / 255.0
+img_array = image.img_to_array(
+    img
+)
 
+# EfficientNetB0 preprocessing is built
+# into the Keras EfficientNet model.
+# Keep pixels in 0-255 range.
 
-# ============================================================
-# Add Batch Dimension
+img_array = np.asarray(
+    img_array,
+    dtype=np.float32
+)
 
-img = tf.expand_dims(
-    img,
+img_array = np.expand_dims(
+    img_array,
     axis=0
 )
 
 
 # ============================================================
-# Prediction
+# PREDICTION
+# ============================================================
 
 prediction = model.predict(
-    img,
-    verbose=0
+    img_array,
+    verbose=1
 )
 
-predicted_index = int(
-    np.argmax(prediction[0])
+predicted_index = np.argmax(
+    prediction[0]
+)
+
+confidence = (
+    prediction[0][predicted_index]
+    * 100
 )
 
 predicted_class = class_names[
     predicted_index
 ]
 
-confidence = float(
-    np.max(prediction[0]) * 100
+
+# ============================================================
+# RESULT
+# ============================================================
+
+print("\n=============================================")
+print("       ASL DIGIT RECOGNITION")
+print("=============================================")
+
+print(
+    "Image      :",
+    os.path.basename(IMAGE_PATH)
 )
+
+print(
+    "Prediction :",
+    predicted_class
+)
+
+print(
+    f"Confidence : {confidence:.2f}%"
+)
+
+print("=============================================")
 
 
 # ============================================================
-# Display Result
+# ALL PROBABILITIES
+# ============================================================
 
-print()
-print("=" * 45)
-print("       ASL HAND GESTURE RECOGNITION")
-print("=" * 45)
+print("\nPrediction probabilities:")
 
-print(f"Image       : {IMAGE_PATH.name}")
-print(f"Prediction  : {predicted_class}")
-print(f"Confidence  : {confidence:.2f}%")
+for i, probability in enumerate(
+    prediction[0]
+):
 
-print("=" * 45)
+    print(
+        f"{class_names[i]} : "
+        f"{probability * 100:.2f}%"
+    )

@@ -3,303 +3,626 @@ import json
 import tensorflow as tf
 
 from tensorflow.keras import layers, models
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.applications import EfficientNetB0
+from tensorflow.keras.callbacks import (
+    ModelCheckpoint,
+    EarlyStopping,
+    ReduceLROnPlateau
+)
 
 
 # ============================================================
-# Paths
+# PATHS
+# ============================================================
 
+BASE_DIR = r"D:\Hand gesture"
 
-TRAIN_DIR = r"D:\Hand gesture\Dataset\ASL-HG American Sign Language Hand Gesture Image D\ASL_HG_36000\Processed_images\asl_processed\train"
+DATASET_DIR = (
+    r"D:\Hand gesture\Dataset"
+    r"\American Sign Language Digits Dataset"
+)
 
-TEST_DIR = r"D:\Hand gesture\Dataset\ASL-HG American Sign Language Hand Gesture Image D\ASL_HG_36000\Processed_images\asl_processed\test"
+MODEL_DIR = os.path.join(
+    BASE_DIR,
+    "models"
+)
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(
+    MODEL_DIR,
+    "best_model.keras"
+)
 
-MODEL_DIR = os.path.join(BASE_DIR, "models")
-
-os.makedirs(MODEL_DIR, exist_ok=True)
+CLASS_NAMES_PATH = os.path.join(
+    MODEL_DIR,
+    "class_names.json"
+)
 
 
 # ============================================================
-# Parameters
+# SETTINGS
+# ============================================================
 
+IMG_SIZE = 224
 
-IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
-EPOCHS = 10
+
+VALIDATION_SPLIT = 0.20
+
 SEED = 42
 
+INITIAL_EPOCHS = 10
+
+FINE_TUNE_EPOCHS = 15
+
 
 # ============================================================
-# Load Training Dataset
+# CREATE MODEL DIRECTORY
+# ============================================================
 
-
-train_ds = tf.keras.utils.image_dataset_from_directory(
-    TRAIN_DIR,
-    image_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    validation_split=0.2,
-    subset="training",
-    seed=SEED,
-    shuffle=True
+os.makedirs(
+    MODEL_DIR,
+    exist_ok=True
 )
 
 
 # ============================================================
-# Load Validation Dataset
+# START
+# ============================================================
 
-val_ds = tf.keras.utils.image_dataset_from_directory(
-    TRAIN_DIR,
-    image_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    validation_split=0.2,
-    subset="validation",
-    seed=SEED,
-    shuffle=True
-)
+print("\n=============================================")
+print("     ASL DIGIT RECOGNITION - EFFICIENTNETB0")
+print("=============================================\n")
+
+print("Dataset:")
+print(DATASET_DIR)
 
 
 # ============================================================
-# Get Class Names BEFORE map()
+# CHECK DATASET
+# ============================================================
 
+if not os.path.exists(DATASET_DIR):
 
-class_names = train_ds.class_names
-
-print("\n========================================")
-print("CLASS INFORMATION")
-print("========================================")
-
-print("Number of classes:", len(class_names))
-print("Classes:", class_names)
-
-
-# Check that we have 36 classes
-if len(class_names) != 36:
-    raise ValueError(
-        f"Expected 36 classes, but found {len(class_names)} classes."
+    raise FileNotFoundError(
+        f"\nDataset not found:\n{DATASET_DIR}"
     )
 
 
 # ============================================================
-# Normalize Images
+# LOAD DATASET
+# ============================================================
+
+print("\nLoading dataset...")
 
 
-normalization_layer = layers.Rescaling(1.0 / 255)
+train_ds = tf.keras.utils.image_dataset_from_directory(
 
-train_ds = train_ds.map(
-    lambda x, y: (normalization_layer(x), y),
-    num_parallel_calls=tf.data.AUTOTUNE
+    DATASET_DIR,
+
+    labels="inferred",
+
+    label_mode="int",
+
+    validation_split=VALIDATION_SPLIT,
+
+    subset="training",
+
+    seed=SEED,
+
+    image_size=(
+        IMG_SIZE,
+        IMG_SIZE
+    ),
+
+    batch_size=BATCH_SIZE,
+
+    shuffle=True
 )
 
-val_ds = val_ds.map(
-    lambda x, y: (normalization_layer(x), y),
-    num_parallel_calls=tf.data.AUTOTUNE
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+
+    DATASET_DIR,
+
+    labels="inferred",
+
+    label_mode="int",
+
+    validation_split=VALIDATION_SPLIT,
+
+    subset="validation",
+
+    seed=SEED,
+
+    image_size=(
+        IMG_SIZE,
+        IMG_SIZE
+    ),
+
+    batch_size=BATCH_SIZE,
+
+    shuffle=False
 )
 
 
 # ============================================================
-# Improve Dataset Performance
+# CLASS NAMES
+# ============================================================
+
+class_names = train_ds.class_names
+
+num_classes = len(
+    class_names
+)
 
 
-train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
-val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
+print("\n=============================================")
+
+print(
+    "Number of classes:",
+    num_classes
+)
+
+print(
+    "Classes:",
+    class_names
+)
+
+print("=============================================")
 
 
 # ============================================================
-# Load MobileNetV2
+# VERIFY CLASSES
+# ============================================================
+
+expected_classes = [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9"
+]
 
 
-base_model = MobileNetV2(
-    weights="imagenet",
+if class_names != expected_classes:
+
+    print("\nWARNING!")
+
+    print(
+        "Expected:",
+        expected_classes
+    )
+
+    print(
+        "Found:",
+        class_names
+    )
+
+
+# ============================================================
+# SAVE CLASS NAMES
+# ============================================================
+
+with open(
+    CLASS_NAMES_PATH,
+    "w"
+) as f:
+
+    json.dump(
+        class_names,
+        f,
+        indent=4
+    )
+
+
+print(
+    "\nClass names saved:"
+)
+
+print(
+    CLASS_NAMES_PATH
+)
+
+
+# ============================================================
+# PREFETCH
+# ============================================================
+
+AUTOTUNE = tf.data.AUTOTUNE
+
+train_ds = train_ds.prefetch(
+    AUTOTUNE
+)
+
+val_ds = val_ds.prefetch(
+    AUTOTUNE
+)
+
+
+# ============================================================
+# DATA AUGMENTATION
+# ============================================================
+
+data_augmentation = tf.keras.Sequential([
+
+    layers.RandomRotation(
+        0.12
+    ),
+
+    layers.RandomZoom(
+        height_factor=(-0.15, 0.15),
+
+        width_factor=(-0.15, 0.15)
+    ),
+
+    layers.RandomTranslation(
+        height_factor=0.10,
+
+        width_factor=0.10
+    ),
+
+    layers.RandomContrast(
+        0.15
+    )
+
+], name="data_augmentation")
+
+
+# ============================================================
+# LOAD EFFICIENTNETB0
+# ============================================================
+
+print("\nLoading EfficientNetB0...")
+
+
+base_model = EfficientNetB0(
+
     include_top=False,
-    input_shape=(224, 224, 3)
+
+    weights="imagenet",
+
+    input_shape=(
+        IMG_SIZE,
+        IMG_SIZE,
+        3
+    )
 )
 
 
-# Freeze MobileNetV2
+# ============================================================
+# FREEZE BASE MODEL
+# ============================================================
+
 base_model.trainable = False
 
 
 # ============================================================
-# Build Model
-
-
-model = models.Sequential([
-    
-    base_model,
-
-    layers.GlobalAveragePooling2D(),
-
-    layers.Dropout(0.3),
-
-    layers.Dense(
-        128,
-        activation="relu"
-    ),
-
-    layers.Dropout(0.2),
-
-    layers.Dense(
-        len(class_names),
-        activation="softmax"
-    )
-])
-
-
+# BUILD MODEL
 # ============================================================
-# Compile Model
+
+inputs = layers.Input(
+
+    shape=(
+        IMG_SIZE,
+        IMG_SIZE,
+        3
+    )
+)
 
 
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(
-        learning_rate=0.001
-    ),
-    
-    loss="sparse_categorical_crossentropy",
-    
-    metrics=["accuracy"]
+x = data_augmentation(
+    inputs
+)
+
+
+x = base_model(
+    x,
+
+    training=False
+)
+
+
+x = layers.GlobalAveragePooling2D()(
+    x
+)
+
+
+x = layers.BatchNormalization()(
+    x
+)
+
+
+x = layers.Dropout(
+    0.35
+)(
+    x
+)
+
+
+x = layers.Dense(
+    256,
+
+    activation="relu"
+)(
+    x
+)
+
+
+x = layers.BatchNormalization()(
+    x
+)
+
+
+x = layers.Dropout(
+    0.30
+)(
+    x
+)
+
+
+outputs = layers.Dense(
+
+    num_classes,
+
+    activation="softmax"
+
+)(x)
+
+
+model = models.Model(
+
+    inputs,
+
+    outputs
 )
 
 
 # ============================================================
-# Display Model
-
+# MODEL SUMMARY
+# ============================================================
 
 model.summary()
 
 
 # ============================================================
-# Model Checkpoint
-
-
-checkpoint_path = os.path.join(
-    MODEL_DIR,
-    "best_model.keras"
-)
-
-checkpoint = ModelCheckpoint(
-    checkpoint_path,
-    monitor="val_accuracy",
-    save_best_only=True,
-    mode="max",
-    verbose=1
-)
-
-
+# COMPILE - STAGE 1
 # ============================================================
-# Early Stopping
 
+model.compile(
 
-early_stopping = EarlyStopping(
-    monitor="val_accuracy",
-    patience=3,
-    restore_best_weights=True,
-    verbose=1
-)
+    optimizer=tf.keras.optimizers.Adam(
 
+        learning_rate=1e-3
+    ),
 
-# ============================================================
-# Train Model
+    loss="sparse_categorical_crossentropy",
 
-
-print("\n========================================")
-print("STARTING TRAINING")
-print("========================================")
-
-history = model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS,
-    callbacks=[
-        checkpoint,
-        early_stopping
+    metrics=[
+        "accuracy"
     ]
 )
 
 
 # ============================================================
-# Save Class Names
+# CALLBACKS
+# ============================================================
 
+checkpoint = ModelCheckpoint(
 
-class_names_path = os.path.join(
-    MODEL_DIR,
-    "class_names.json"
+    MODEL_PATH,
+
+    monitor="val_accuracy",
+
+    mode="max",
+
+    save_best_only=True,
+
+    verbose=1
 )
 
-with open(class_names_path, "w") as f:
-    json.dump(class_names, f, indent=4)
+
+early_stopping = EarlyStopping(
+
+    monitor="val_accuracy",
+
+    mode="max",
+
+    patience=5,
+
+    restore_best_weights=True,
+
+    verbose=1
+)
+
+
+reduce_lr = ReduceLROnPlateau(
+
+    monitor="val_loss",
+
+    factor=0.3,
+
+    patience=2,
+
+    min_lr=1e-7,
+
+    verbose=1
+)
+
+
+callbacks = [
+
+    checkpoint,
+
+    early_stopping,
+
+    reduce_lr
+
+]
 
 
 # ============================================================
-# Load Best Model
+# STAGE 1
+# ============================================================
+
+print("\n=============================================")
+print("       STAGE 1 - TRANSFER LEARNING")
+print("=============================================\n")
+
+
+history1 = model.fit(
+
+    train_ds,
+
+    validation_data=val_ds,
+
+    epochs=INITIAL_EPOCHS,
+
+    callbacks=callbacks
+)
+
+
+# ============================================================
+# STAGE 2 - FINE TUNING
+# ============================================================
+
+print("\n=============================================")
+print("       STAGE 2 - FINE TUNING")
+print("=============================================\n")
+
+
+base_model.trainable = True
+
+
+# Freeze all but last 40 layers
+
+for layer in base_model.layers[:-40]:
+
+    layer.trainable = False
+
+
+# Keep BatchNormalization frozen
+
+for layer in base_model.layers:
+
+    if isinstance(
+        layer,
+        layers.BatchNormalization
+    ):
+
+        layer.trainable = False
+
+
+# ============================================================
+# RECOMPILE
+# ============================================================
+
+model.compile(
+
+    optimizer=tf.keras.optimizers.Adam(
+
+        learning_rate=1e-5
+    ),
+
+    loss="sparse_categorical_crossentropy",
+
+    metrics=[
+        "accuracy"
+    ]
+)
+
+
+# ============================================================
+# FINE TUNING
+# ============================================================
+
+history2 = model.fit(
+
+    train_ds,
+
+    validation_data=val_ds,
+
+    epochs=FINE_TUNE_EPOCHS,
+
+    callbacks=callbacks
+)
+
+
+# ============================================================
+# LOAD BEST MODEL
+# ============================================================
+
+print("\n=============================================")
+print("          LOADING BEST MODEL")
+print("=============================================\n")
 
 
 best_model = tf.keras.models.load_model(
-    checkpoint_path
+
+    MODEL_PATH
 )
 
 
 # ============================================================
-# Load Test Dataset
+# FINAL VALIDATION
+# ============================================================
+
+print("\n=============================================")
+print("        FINAL VALIDATION RESULT")
+print("=============================================\n")
 
 
-test_ds = tf.keras.utils.image_dataset_from_directory(
-    TEST_DIR,
-    image_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    shuffle=False
+loss, accuracy = best_model.evaluate(
+
+    val_ds,
+
+    verbose=1
 )
 
-test_class_names = test_ds.class_names
 
-print("\n========================================")
-print("TEST DATASET")
-print("========================================")
+print("\n=============================================")
 
-print("Test classes:", test_class_names)
+print(
+    f"Validation Accuracy: "
+    f"{accuracy * 100:.2f}%"
+)
+
+print(
+    f"Validation Loss: "
+    f"{loss:.4f}"
+)
+
+print("=============================================")
 
 
 # ============================================================
-# Normalize Test Dataset
-
-
-test_ds = test_ds.map(
-    lambda x, y: (normalization_layer(x), y),
-    num_parallel_calls=tf.data.AUTOTUNE
-)
-
-test_ds = test_ds.prefetch(
-    tf.data.AUTOTUNE
-)
-
-
+# SAVE MODEL
 # ============================================================
-# Evaluate Model
 
-print("\n========================================")
-print("TESTING MODEL")
-print("========================================")
+best_model.save(
 
-test_loss, test_accuracy = best_model.evaluate(
-    test_ds
+    MODEL_PATH
 )
 
-print("\n========================================")
-print("FINAL RESULTS")
-print("========================================")
 
-print(f"Test Loss     : {test_loss:.4f}")
-print(f"Test Accuracy : {test_accuracy * 100:.2f}%")
+print("\nModel saved to:")
+
+print(
+    MODEL_PATH
+)
 
 
-print("\n========================================")
-print("TRAINING COMPLETE")
-print("========================================")
+print("\nClasses:")
 
-print("Model saved to:")
-print(checkpoint_path)
+print(
+    class_names
+)
 
-print("\nClass names saved to:")
-print(class_names_path)
+
+print("\n=============================================")
+print("           TRAINING COMPLETE")
+print("=============================================\n")
