@@ -14,3 +14,7 @@ __pycache__/
 
 # VS Code
 .vscode/
+
+models/*.keras
+models/*.h5
+models/*.weights.h5
