@@ -14,7 +14,7 @@ MODEL_PATH = r"D:\Hand gesture\models\best_model.keras"
 
 CLASS_NAMES_PATH = r"D:\Hand gesture\models\class_names.json"
 
-IMAGE_PATH = r"D:\Hand gesture\Dataset\American Sign Language Digits Dataset\0\Input Images - Sign 0\Sign 0 (1).jpeg"
+IMAGE_PATH = r"D:\Hand gesture\Dataset\American Sign Language Digits Dataset\9\Input Images - Sign 9\Sign 9 (4).jpeg"
 
 
 # ============================================================
