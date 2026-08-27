@@ -56,6 +56,34 @@ FINE_TUNE_EPOCHS = 15
 
 
 # ============================================================
+# SAFETY CHECK - MODEL_DIR MUST NOT BE INSIDE DATASET_DIR
+# ============================================================
+#
+# This is the exact bug that previously caused a "models" class
+# to appear in the trained model's class list: MODEL_DIR ended up
+# nested inside (or equal to) DATASET_DIR, so image_dataset_from_directory
+# scanned it as if it were a gesture class.
+#
+# This check makes that failure mode impossible to hit silently again.
+
+_normalized_model_dir = os.path.normcase(os.path.abspath(MODEL_DIR))
+_normalized_dataset_dir = os.path.normcase(os.path.abspath(DATASET_DIR))
+
+if (
+    _normalized_model_dir == _normalized_dataset_dir
+    or _normalized_model_dir.startswith(_normalized_dataset_dir + os.sep)
+):
+    raise RuntimeError(
+        "\n\nMODEL_DIR is inside (or equal to) DATASET_DIR.\n"
+        f"MODEL_DIR:   {MODEL_DIR}\n"
+        f"DATASET_DIR: {DATASET_DIR}\n\n"
+        "This causes the model-output folder to be scanned as a "
+        "gesture class during training. Move MODEL_DIR outside of "
+        "DATASET_DIR before running this script."
+    )
+
+
+# ============================================================
 # CREATE MODEL DIRECTORY
 # ============================================================
 
@@ -85,6 +113,52 @@ if not os.path.exists(DATASET_DIR):
 
     raise FileNotFoundError(
         f"\nDataset not found:\n{DATASET_DIR}"
+    )
+
+
+# ============================================================
+# WARN ABOUT UNEXPECTED SUBFOLDERS BEFORE LOADING
+# ============================================================
+#
+# image_dataset_from_directory treats every subfolder as a class.
+# Catching stray folders (like a stray "models" directory) here,
+# before any training compute is spent, is much cheaper than
+# discovering it after a full training run.
+
+expected_classes = [
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
+]
+
+_actual_subfolders = sorted([
+    name for name in os.listdir(DATASET_DIR)
+    if os.path.isdir(os.path.join(DATASET_DIR, name))
+])
+
+_unexpected = [
+    name for name in _actual_subfolders
+    if name not in expected_classes
+]
+
+if _unexpected:
+    raise RuntimeError(
+        "\n\nUnexpected subfolder(s) found inside DATASET_DIR:\n"
+        f"{_unexpected}\n\n"
+        f"DATASET_DIR should only contain: {expected_classes}\n"
+        f"Found: {_actual_subfolders}\n\n"
+        "Remove or relocate the unexpected folder(s) before training."
+    )
+
+_missing = [
+    name for name in expected_classes
+    if name not in _actual_subfolders
+]
+
+if _missing:
+    raise RuntimeError(
+        "\n\nExpected class folder(s) missing from DATASET_DIR:\n"
+        f"{_missing}\n\n"
+        f"DATASET_DIR should contain: {expected_classes}\n"
+        f"Found: {_actual_subfolders}"
     )
 
 
@@ -172,36 +246,26 @@ print("=============================================")
 
 
 # ============================================================
-# VERIFY CLASSES
+# VERIFY CLASSES - HARD STOP ON MISMATCH
 # ============================================================
-
-expected_classes = [
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9"
-]
-
+#
+# Previously this only printed a warning and continued training
+# anyway, which is exactly how a "models" class made it into a
+# real trained model. A mismatch here now stops the run.
 
 if class_names != expected_classes:
 
-    print("\nWARNING!")
-
-    print(
-        "Expected:",
-        expected_classes
+    raise RuntimeError(
+        "\n\nClass mismatch detected - training aborted.\n"
+        f"Expected: {expected_classes}\n"
+        f"Found:    {class_names}\n\n"
+        "Do not proceed with training until this matches exactly. "
+        "Check DATASET_DIR for stray folders, empty class folders, "
+        "or unsupported image files."
     )
 
-    print(
-        "Found:",
-        class_names
-    )
+
+print("\nClass check passed - training will proceed.\n")
 
 
 # ============================================================
@@ -304,6 +368,15 @@ base_model.trainable = False
 # ============================================================
 # BUILD MODEL
 # ============================================================
+#
+# NOTE ON PREPROCESSING:
+# Keras's EfficientNetB0 (include_top=False) expects raw pixel
+# values in [0, 255] - it has its own internal Rescaling +
+# Normalization layers baked in. image_dataset_from_directory
+# already returns float32 images in [0, 255] by default, so no
+# extra rescale/preprocess_input step is needed here. This must
+# match webcam.py's preprocessing mode exactly ("efficientnet"
+# mode there = passthrough, matching this).
 
 inputs = layers.Input(
 
@@ -602,6 +675,11 @@ print("=============================================")
 # ============================================================
 # SAVE MODEL
 # ============================================================
+#
+# NOTE: best_model was just loaded from MODEL_PATH above, so this
+# re-save is a no-op in terms of content - kept for clarity/safety
+# in case evaluate() or future code between load and here ever
+# mutates the model.
 
 best_model.save(
 
