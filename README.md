@@ -147,4 +147,4 @@ models/hand_landmarker.task
 
 Harsh Bhatt
 
-Machine Learning / Deep Learning Project
+**BCA**
