@@ -147,4 +147,3 @@ models/hand_landmarker.task
 
 Harsh Bhatt
 
-**BCA**
