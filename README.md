@@ -14,7 +14,6 @@ The project uses **EfficientNetB0 Transfer Learning** for image classification a
 - 📷 Real-time webcam prediction
 - ✋ MediaPipe hand detection
 - 📊 Confidence score for predictions
-- 🔄 Data augmentation
 - 🔥 Two-stage training:
   - Transfer learning
   - Fine-tuning
